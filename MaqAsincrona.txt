@@ -1,0 +1,403 @@
+
+
+
+ANEXOS
+
+
+
+Anexo 6.6.A Programa fuente en Mat Lab para la simulacien   del Analisis
+Transitorioy Estacionario del Motor AsincronoTrifasico.
+
+Se muestran las sentencias del programa fuente en Mat Lab desarrollado para el analisis  transitorio  y   estacionario  del  motor  asincrono   trifasico,   siendo  las siguientes:
+
+%Dates del motor: Rs=3.7568;%Resistencia del motor. lm=0.569;%inductancia de magnetizaci6n.
+lr=lm+0.01105;%inductancia  (magnetizaci6n+dispersi6n del rotor). ls=lm+0.01624;%inductancia  (magnetizaci6n+dispersi6n del estator). Rr=3.1329;% resistencia del rotor.
+Rm=2881,98;% resistencia de magnetizaci6n J=0.00397;%Momento de inercia. D=0.001764;%coeficiente de fricci6n.
+p=2; %Numero de polos.
+
+a= 1.2125%Relaci6n de transformaci6n
+
+%Dates de la fuente(Balanceado ):
+
+0/0-----------------------------------------
+V1 =230;% tension de fase(v),(conexi6n delta)
+
+fb=60;% frecuencia(Hz)
+
+0/0------------------------------------------
+%CARGA:
+
+0/0------------------------------------------
+Tm=S.O;
+
+0/0------------------------------------------
+wb=2*pi*fb;% frecuencia (rad/s). Vmax=sqrt(2)*V1 ;%tension real maxima. w=wb;% velocidad sincrona.
+wr=O; %velocidad inicial del rotor.
+
+1=[0;0;0;0];% corriente inicial. n=1;
+ti=O; 
+%tiempo  final:
+
+tf=2;%rango   final  de tiempo dt=1 e-4;%variacion    de tiempo
+h=1 e-4;%h  pasos  para la aplicacion   de RRKK
+
+for t=ti:dt:tf
+
+%Matriz  Z=R  +L.p+w.G:
+
+R=[Rs  O  O  O;O   Rs O  O;O   O  Rr O  ;    0 0 0 Rr]; L=[ls  O  Im O;O  Is O  lm;lm  O  Ir O;O  Im O  Ir];
+G=-1.*[  0      w*ls       O                w*lm;
+
+-w*ls     O             -w*lm           O;
+
+O      lm*(w-0.5*p*wr)     0    lr*(w-0.5*p*wr);
+
+-lm*(w-0.5*p*wr)    0   -lr*(w-0.5*p*wr)     O];
+
+%variacion   de las tensiones   en el tiempo  a una velocidad   w. teta=w*t;
+%definicion   de la transformada   de park:
+
+Kqds=(2/3  )*[ cos(teta)  cos(teta-2*pi/3)    cos(teta+2*pi/3   );
+
+sin(teta)  sin(teta-2*pi/3)    sin(teta+2*pi/3);
+
+0.5 0.5 0.5];
+
+%tension  de fase  trifasica:
+
+vabc=Vmax.*[sin(wb*t);sin(wb*t-2*pi/3);sin(wb*t+2*pi/3)];
+
+%tension  en coordenada   DQ del estator:
+
+vqds=Kqds*vabc;
+
+%tension  en coordenada   DQ del rotor:
+
+vqdr=Kqds*[O;O;O];
+
+%tension  de fase  del estator  tritasico  (guardar  qrafica  cada  n):
+
+gva be( n,: )=vabc';
+
+gtiempo(n,  1  )=t;
+
+%tensiones   DQ del estator  y rotor (guardar qrafica cada n):
+
+gvqds(n,:)=vqds';
+
+gvqdr(n,:)=vqdr';
+
+% ordenamiento tensiones del modelo DQ del estator y rotor: U=[gvqds(n, 1 );gvqds(n,2);gvqdr(n, 1 );gvqdr(n,2)];
+10=1;
+
+wrO=wr;
+
+%planteamiento de las 4 ecuaciones diferenciales de corriente del modelo DQ 
+%en form a matricial:
+
+dl=(L A(-1 ))*(U-(R+G)*I);
+
+% y despues  el planteamiento   de la ecuaci6n   mecanica:
+
+%dwr=( 1 /J)*(transpose(I   )*G*l-0-D*(wr)   );
+
+% K1
+
+K1 =h.*dl;
+
+% K2 l=I0+0.5*K1;
+dl=(L A(-1 ))*(U-(R+G)*I); K2=h.*dl;
+% k3 l=I0+0.5*K2;
+dl=(L A(-1 ))*(U-(R+G)*I); K3=h.*dl;
+% k4 l=IO+K3;
+dl=(L A(-1 ))*(U-(R+G)*I); K4=h.*dl;
+1=10+(1/6)*(K1 +2*K2+2*K3+K4   );
+
+gl(n,:)=I';
+
+%determinaci6n    del torque  electrornaqnetico    que dependen   de Lm y las
+
+%corrientes:
+
+Te=-1.5*0.5*p*lm*(gl(n,4     )*gl(n, 1  )-gl(n,3)*gl(n,2));
+
+gte(n, 1 )=Te;
+
+%planteamiento    de la Sta ecuaci6n  diferencial:
+
+dwr=( 1 /J)*(Te-Tm-D*(wr));
+
+% K1
+
+L 1  =h*dwr;
+
+%K2 wr=wr0+0.5*L   1;
+dwr=( 1 /J)*(Te-Tm-D*(wr)   ); L2=h*dwr;
+% k3 wr=wr0+0.5*L2; dwr=(1/J)*(Te-Tm-D*(wr)); 
+L3=h*dwr;
+
+% k4 wr=wrO+L3;
+dwr=(1/J)*(Te-Tm-D*(wr)); L4=h*dwr;
+wr=wr0+(1  /6)*(L 1 +2*L2+2*L3+L4   );
+
+if wr<O
+
+wr=O;
+
+end
+
+%aplicamos   la transformada   de Park
+
+% modelo  DQ ---> Modelo  trifasico. labcs=Kqdso-t  )*[gl(n, 1  );gl(n,2);0]; glabcs(n,:  )=labcs';
+%velocidad   relativa  de rotor:
+
+teta=(w-0.5*p*wr)*t;
+
+% Transformaci6n    trifasica  del rotortpararnetros    con frecuencia   (w-0.5*p*wr):
+
+labcr=(KqdsA-1  )*[gl(n,3);gl(n,4   );O];
+
+glabcr(n,:  )=labcr';
+
+gwr(n, 1  )=wr;
+
+%Perdidas   del cobre: Pcu_s=3/2*Rs*(gl(n,	1  )A2+gl(n,2)A2); Pcu_r=3/2*Rr*(gl(n,3)A2+gl(n,4	)A2); Pcu_total=Pcu_s+Pcu_r;
+gPcu_total(n,  1  )=Pcu_total;
+
+%Perdidas   del hierro:
+
+S=(wb-wr)/wb;%deslizamiento Vhierro=abs(Rr/S+wb*0.01105*i)*abs(gl(n,3)+gl(n,4           )*i)/(sqrt(2)*a); Ph ierro=3 *Vh ie rroA2/Rm;
+gPhierro(n,  1  )=Phierro;
+
+%$Perdidas   mecanica: Pmec=D*wr*wr; gPmec(n,  1  )=Pmec;
+%Perdidas   totales: Ptotal=Pcu_total+Phierro+Pmec; gPtotal(n,  1  )=Ptotal; 
+%Eficiencia efic=(wr*Tm)/(wr*Tm+Ptotal+O.OOS*Te*wr); gefic(n, 1  )=efic;
+%%%%%%%%%%%%%%%%%%%
+
+%MODELO   PARA  LA DETERMINACION     DE LA SATURACION
+
+%Determinaci6n    par el modelo  de Linealizaci6n:
+
+%corriente   lineal:
+
+llineal=abs(gl(n,   1  )+gl(n,2)*i)/sqrt(2);
+
+%corriente   corriente  de saturaci6n(ecuaci6n     determinada   par la linealizacion
+
+%detallado   en el documento   word):
+
+lsat=(310.1  *llineal-2.423-28.25)/172.6;
+
+%determinaci6n	del Saturaci6n   definici6n   dado  par el modelo  (data  guardado   par la primera  iteraci6n
+
+% zona  lineal) Sat(n, 1  )=lsat/llineal;
+%OBS:  esta  posibilidad   permite  tener  coma  referencia   a la zona  lineal
+
+%par  lo cual se tiene  dos iteraciones.
+
+%CONDICION    INICIAL
+
+wr=O; %velocidad    inicial  del rotor.
+
+1=[0;0;0;0];% corriente inicial. n=1 ;%reiniciar   las iteraciones. ti=O;
+%tiempo  final:
+
+tf=2;%rango   final  de tiempo. dt=1 e-4;%variaci6n    de tiempo.
+h=1 e-4;%h  pasos  para la aplicaci6n   de RRKK.
+
+for t=ti:dt:tf  %SEGUNDA   ITERACION,   SATURACION
+
+lm=0.569/Sat(n,   1)
+
+lr=lm+0.01105;%inductancia      (magnetizaci6n+dispersi6n      del rotor). ls=lm+0.01624;%inductancia      (magnetizaci6n+dispersi6n      del estator).
+%Matriz  Z=R  +L.p+w.G:
+
+R=[Rs  O  O  O;O    Rs O  O;O   O  Rr O  ;    0 0 0 Rr]; L=[ls  O  Im O;O  Is O  lm;lm  O  Ir O;O  Im O  Ir];
+G=-1.*[  0      w*ls       O                 w*lm;
+-w*ls     O             -w*lm           o·, 
+O      lm*(w-0.5*p*wr)     0    lr*(w-0.5*p*wr);
+
+-lm*(w-0.5*p*wr)    0   -lr*(w-0.5*p*wr)     O];
+
+%variacion   de las tensiones   en el tiempo  a una velocidad   w. teta=w*t;
+%definicion   de la transformada   de Park:
+
+Kqds=(2/3)*[cos(teta-asim1)            cos(teta-2*pi/3-asim1    +asim3)        cos(teta+2*pi/3- asim 1 +asim2);
+
+sin(teta-asim1)                sin(teta-2*pi/3-asim1    +asim3)              sin(teta+2*pi/3- asim 1 +asim2);
+
+0.5 0.5 0.5];
+
+%tension  de fase  trifasica:
+
+vabc=Vmax.*[sin(wb*t);sin(wb*t-2*pi/3);sin(wb*t+2*pi/3)];
+
+%tension  en coordenada   DQ del estator:
+
+vqds=Kqds*vabc;
+
+%tension  en coordenada   DQ del rotor:
+
+vqdr=Kqds*[O;O;O];
+
+%tension  de fase  del estator  trifasico  (guardar  qrafica  cada  n):
+
+sgvabc(n,:)=vabc';
+
+gtiempo(n,  1  )=t;
+
+%tensiones   DQ del estator  y rotor  (guardar  qrafica  cada  n):
+
+sgvqds(n,:)=vqds';
+
+sgvqd r( n,: )=vqd r';
+
+% ordenamiento   tensiones   DQ del estator  y rotor: U=[sgvqds(n,  1  );sgvqds(n,2);sgvqdr(n,    1  );sgvqdr(n,2)];
+10=1;
+
+wrO=wr;
+
+%planteamiento    de las 4 ecuaciones   difeenciales   de corriente:
+
+dl=(L "(-1 ))*(U-(R+G)*I);
+
+% planteamiento   de la ecuacion   rnecanica:
+
+%dwr=( 1 /J)*(transpose(I   )*G*l-0-D*(wr)   );
+
+% K1
+
+K1 =h.*dl;
+
+% K2 l=I0+0.5*K1;
+dl=(L "(-1 ))*(U-(R+G)*I); K2=h.*dl; 
+% k3 l=I0+0.5*K2;
+dl=(L A(-1 ))*(U-(R+G)*I); K3=h.*dl;
+% k4 l=IO+K3;
+dl=(L A(-1 ))*(U-(R+G)*I); K4=h.*dl;
+1=10+(1/6)*(K1 +2*K2+2*K3+K4   );
+
+sgl(n,:)=I';
+
+%determinaci6n    del torque  electrornaqnetlco    que dependen   de Lm y las
+
+%corrientes:
+
+Te=-1.5*0.S*p*lm*(sgl(n,4     )*sgl(n, 1  )-sgl(n,3)*sgl(n,2));
+
+sgte(n, 1  )=Te;
+
+%planteamiento    de la Sta ecuaci6n  diferencial:
+
+dwr=( 1 /J)*(Te-Tm-D*(wr));
+
+% K1
+
+L 1  =h*dwr;
+
+%K2 wr=wrO+O.S*L 1; dwr=(1/J)*(Te-Tm-D*(wr)); L2=h*dwr;
+% k3 wr=wr0+0.5*L2;
+dwr=( 1 /J)*(Te-Tm-D*(wr)); L3=h*dwr;
+% k4 wr=wrO+L3;
+dwr=(1/J)*(Te-Tm-D*(wr)); L4=h*dwr;
+wr=wrO+( 1 /6)*(L 1 +2*L2+2*L3+L4   );
+
+if wr<O
+
+wr=O;
+
+end
+
+%aplicamos   la transformada   de Park 
+% modelo  DQ ---> Modelo trifasico. labcs=Kqdse-t )*[sgl(n, 1 );sgl(n,2);0]; sglabcs(n,: )=labcs';
+%velocidad relativa de rotor:
+
+teta=(w-0.5*p*wr)*t;
+
+%Transformaci6n trifasica del rotortpararnetros con frecuencia (w-0.5*p*wr):
+
+labcr=Ikqds vl )*[sgl(n,3);sgl(n,4 );O];
+
+sglabcr(n,:)=labcr';
+
+sgwr( n, 1 )=wr;
+
+%Perdidas del cobre: Pcu_s=3/2*Rs*(sgl(n, 1 )A2+gl(n,2)A2); Pcu_r=3/2*Rr*(sgl(n,3)A2+sgl(n,4 )A2); Pcu_total=Pcu_s+Pcu_r;
+sgPcu_total(n, 1 )=Pcu_total;
+
+%Perdidas del hierro:
+
+S=(wb-wr)/wb;%deslizamiento Vhierro=abs(Rr/S+wb*0.01105*i)*abs(sgl(n,3)+sgl(n,4  )*i)/(sqrt(2)*a); Phierro=3*Vh ie rroA2/Rm;
+sgPhierro(n, 1 )=Phierro;
+
+%$Perdidas mecanica: Pmec=D*wr*wr; sgPmec(n, 1 )=Pmec;
+%Perdidas totales: Ptotal=Pcu_total+Phierro+Pmec; sgPtotal(n, 1 )=Ptotal;
+%Eficiencia efic=(wr*Tm)/(wr*Tm+Ptotal+0.005*Te*wr); sgefic(n, 1 )=efic;
+n=n+1;
+
+end
+
+%GRAFICOS: figure(1) subplot(211)
+plot(gtiempo,sgvabc(:, 1 ), 'b' ,gtiempo,sgvabc(: ,2),'r',gtiempo,sgvabc(: ,3),'g')
+
+legend('V_\alphaAs(t)','V_\betaAs(t)','V_\gammaAs(t)') 
+title('TESION    DE FASE  DEL  ESTATOR')
+
+xlabel('Tiempo    (seg)') ylabel('Tensi6n    de fase(V)') axis([O 0.2 -380  380]) figure(1)
+subplot(212)
+
+plot(gtiempo,sgvqds(:,    1  ), 'b' ,gtiempo,sgvqds(:   ,2), 'r')
+
+legend('V _dAs(t)','V _qAs(t)')
+
+title('TESION    DE FASE  DEL  ESTATOR   EN MODELO   D-Q')
+
+xlabel('Tiempo(seg)') ylabel('Tensi6n    (V)') axis([O 0.5 -380  380]) figure(2)
+subplot(211)
+
+plot(gtiempo,gl(:,   1  ), 'b' ,gtiempo,gl(:  ,2), 'g' ,gtiempo,gl(:  ,3),'y' ,gtiempo,gl(:,4   ), 'r' ,gtiem po,sgl(:,  1  ), 'b' ,gtiempo,sgl(:,2),   'g' ,gtiempo,sgl(:   ,3), 'y' ,gtiempo,sgl(:   ,4 ), 'r')
+
+legend('l_  dAs(t)[Lineal]',  'l_qAs(t)[Lineal]',  'I_ dAr(t)[Lineal]',  'I_ qAr(t)[Lineal]',  'I_ dAs(t)[ Saturado ]', 'l_qAs(t)[Saturado  ]', 'l_dAr(t)[Saturado  ]', 'l_qAr(t)[Saturado  ]')
+
+title('CORRIENTE     DEL ESTATOR   Y ROTOR  EN MODELO   D-Q')
+
+xlabel('Tiempo    (seg)') ylabel('corriente    (A)') axis([O 0.5 -50 50]) figure(2)
+subplot(212)
+
+plot(gtiempo,gwr(:,   1  ),'r',gtiempo,sgwr(:,    1  ),'b') legend('Wr(lineal)',   'Wr(saturado  )') title('VELOCIDAD     DEL ROTOR  (Wr)') xlabel('Tiempo    (seg)')
+ylabel('Wr(rad/s   )') axis([O 0.5 -400 400]) figure(3)
+subplot(211)
+
+plot(gtiempo,glabcs(:,    1 ),'b' ,gtiempo,glabcs(:   ,2), 'r' ,gtiempo,glabcs(:,3),    'g' ,gtiempo, sglabcs(:,  1  ),'b',gtiempo,sglabcs(:,2),'r',gtiempo,sglabcs(:,3),'g')
+
+legend('l_  \alphaAs(t)[Lineal]',   'I_ \betaAs(t)[Lineal]',  'I_ \gammaAs(t)[Lineal]',   'I_ \alphaA
+s(t)[Saturado  ]', 'I_ \betaAs(t)[Saturado   ]', 'I_ \gammaAs(t)[Saturado   ]') 
+title('CORRIENTE     DE FASE  DEL ESTATOR   TRIFASICO')
+
+xlabel('Tiempo    (seg)') ylabel('Corriente    de fase(A)') axis([O 0.6 -50 50])
+figure(3)
+
+subplot(212)
+
+plot(gtiempo,glabcr(:,    1 ),'b' ,gtiempo,glabcr(:   ,2), 'r' ,gtiempo,glabcr(:   ,3), 'g' ,gtiempo,s glabcr(:,  1  ), 'b' ,gtiempo,sglabcr(:   ,2), 'r' ,gtiempo,sglabcr(:   ,3), 'g')
+
+legend('l_  \alphaAr(t)[Lineal]'   ,'I_ \betaAr(t)[Lineal]',  'I_ \gammaAr(t)[Lineal]',   'I_ xalpha'r
+(t)[Saturado  ]', 'I_ \betaAr(t)[Saturado   ]', 'I_ \gammaAr(t)[Saturado   ]') title('CORRIENTE     DE FASE  DEL ROTOR  TRIFASICO   ') xlabel('Tiempo    (seg)')
+ylabel('Corriente    de fase(A)')
+
+axis([O 0.6 -50 50])
+
+figure( 4)
+
+plot(gtiempo,gte(:,   1  ),'r',gtiempo,sgte(:,   1  ),'b') legend('Te(Lineal)',   'Te(Saturado  )') title('TORQUE    ELECTROMAGNETICO      (Te)') xlabel('Tiempo    (seg)')
+ylabel('T e(N. m )') axis([O 0.5 -20 40]) figure(5)
+plot(gtiempo,gPcu_total(:,     1  ),'b',gtiempo,gPhierro(:,    1  ),'r',gtiempo,gPmec(:,    1 ),'y',gti empo,gPtotal(:,  1 ),'g',gtiempo,sgPcu_total(:,    1 ),'b',gtiempo,sgPhierro(:,    1 ),'r',gtiemp o,sgPmec(:,  1  ),'y',gtiempo,sgPtotal(:,    1  ),'g')
+
+legend('Pcu(t)[lineal]',    'Phierro(t)[lineal]',   'Pmec(t)[lineal]',   'Ptotal(t)[lineal]',   'Pcu(t)[sat urado ]', 'Phierro(t)[saturado   ]', 'Pmec(t)[saturado   ]', 'Ptotal(t)[saturado   ]')
+
+title('PERDIDAS    (w) ') xlabel('Tiempo    (seg)') ylabell'Perdidas  (w) ') axis([O 0.5 -40  15000]) figure(6)
+plot(gtiempo,gefic(:,    1  ),'g',gtiempo,sgefic(:,    1  ),'m') legend('Eficiencia(t)[lineal]','Eficiencia(t)[saturada]') title('EFICIENCIA')
+xlabel('Tiempo    (seg)')
+
+ylabel('Eficiencia    ')
+axis ([0 0.6 0 1])
