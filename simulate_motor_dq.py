@@ -90,25 +90,12 @@ def armar_par_carga(tipo: str, torque_nom: float, omega_nom: float) -> Callable[
     raise ValueError("Solo acepto 'constante' o 'cuadratica' como tipo de carga")
 
 
-def perfil_tension_modo(
-    arrancando: bool,
-    v_peak: float,
-    omega_s: float,
-) -> Callable[[float], Tuple[float, float]]:
-    """Genero el perfil para la tensión en dq según la etapa."""
-
+def perfil_tension_modo(arrancando: bool, v_peak: float) -> Callable[[float], Tuple[float, float]]:
+    """Genero un perfil sencillo para la tensión en dq."""
     if arrancando:
-        # Arranque directo a línea: aplico un escalón de tensión en q desde t = 0.
-        def perfil(t: float) -> Tuple[float, float]:
-            # Mantengo vd = 0 e inyecto únicamente vq con el valor de pico.
-            # La corriente va a crecer desde cero en los primeros instantes
-            # porque las ecuaciones de flujo integradas hacen de inductor.
-            _ = t * omega_s  # variable descartada, solo aclaro el origen físico.
-            return 0.0, v_peak
-
-        return perfil
-
-    # En parada no aplico tensión (se apaga de golpe la alimentación).
+        # En arranque inyecto solo componente q (tensión alineada con q).
+        return lambda _t: (0.0, v_peak)
+    # En parada no aplico tensión.
     return lambda _t: (0.0, 0.0)
 
 
@@ -128,7 +115,6 @@ def simular_motor(tiempos: np.ndarray, param: Dict[str, float],
 
     corrientes = np.zeros((len(tiempos), 4))
     tensiones = np.zeros((len(tiempos), 2))
-    tensiones_rotor = np.zeros((len(tiempos), 2))
     torque = np.zeros(len(tiempos))
 
     # Precalculo la inversa de la matriz de inductancias para pasar de flujos a corrientes.
@@ -174,14 +160,9 @@ def simular_motor(tiempos: np.ndarray, param: Dict[str, float],
     for indice, tiempo in enumerate(tiempos[:-1]):
         estado = estados[indice]
         lambdas = estado[:4]
-        omega_r = estado[4]
         ids, iqs, idr, iqr = L_inv @ lambdas
         corrientes[indice] = np.array([ids, iqs, idr, iqr])
         tensiones[indice] = np.array(perfil_tension(tiempo))
-        omega_slip = param["omega_s"] - param["p"] * omega_r
-        tensiones_rotor[indice] = np.array(
-            [omega_slip * lambdas[3], -omega_slip * lambdas[2]]
-        )
         torque[indice] = 1.5 * param["p"] * (lambdas[0] * iqs - lambdas[1] * ids)
         estados[indice + 1] = paso_rk4(dinamica, tiempo, estado, dt)
 
@@ -190,10 +171,6 @@ def simular_motor(tiempos: np.ndarray, param: Dict[str, float],
     ids, iqs, idr, iqr = L_inv @ lambdas_final
     corrientes[-1] = np.array([ids, iqs, idr, iqr])
     tensiones[-1] = np.array(perfil_tension(tiempos[-1]))
-    omega_slip_final = param["omega_s"] - param["p"] * estados[-1, 4]
-    tensiones_rotor[-1] = np.array(
-        [omega_slip_final * lambdas_final[3], -omega_slip_final * lambdas_final[2]]
-    )
     torque[-1] = 1.5 * param["p"] * (lambdas_final[0] * iqs - lambdas_final[1] * ids)
 
     # Devuelvo todo junto en un diccionario.
@@ -202,7 +179,6 @@ def simular_motor(tiempos: np.ndarray, param: Dict[str, float],
         "estados": estados,
         "corrientes": corrientes,
         "tensiones": tensiones,
-        "tensiones_rotor": tensiones_rotor,
         "torque": torque,
     }
 
@@ -276,16 +252,8 @@ def main():
     v_fase_pico = np.sqrt(2.0) * v_fase_rms
 
     # Genero perfiles de tensión para la etapa de arranque y de parada.
-    perfil_arranque = perfil_tension_modo(
-        arrancando=True,
-        v_peak=v_fase_pico,
-        omega_s=param["omega_s"],
-    )
-    perfil_parada = perfil_tension_modo(
-        arrancando=False,
-        v_peak=v_fase_pico,
-        omega_s=param["omega_s"],
-    )
+    perfil_arranque = perfil_tension_modo(arrancando=True, v_peak=v_fase_pico)
+    perfil_parada = perfil_tension_modo(arrancando=False, v_peak=v_fase_pico)
 
     # Creo la grilla temporal para el arranque.
     tiempos_arranque = np.arange(0.0, argumentos.tiempo_arranque + argumentos.dt, argumentos.dt)
@@ -309,8 +277,7 @@ def main():
     omega_sync_mec = param["omega_s"] / param["p"]
 
     # Imprimo resultados del arranque con un toque más informal.
-    print("=== ARRANQUE DIRECTO ===")
-    print("Se aplica un escalón de tensión trifásica equivalente en dq desde t = 0.")
+    print("=== ARRANQUE ===")
     print(f"Tardo {metricas_arranque['tiempo_a_objetivo']:.3f} s en llegar al {argumentos.fraccion*100:.1f}% de la velocidad síncrona")
     print(f"Corriente pico máxima en el estator: {metricas_arranque['corriente_pico_max']:.2f} A")
     print(f"Corriente RMS máxima en el estator: {metricas_arranque['corriente_rms_max']:.2f} A")
@@ -358,94 +325,46 @@ def main():
     # --- Armado de gráficos para ver tensiones y corrientes en el tiempo -------------------
 
     # Para el arranque calculo magnitud de tensión y corriente de estator.
-    # Magnitudes de tensión y corriente en el estator durante arranque y parada.
-    v_est_arranque = np.linalg.norm(resultado_arranque["tensiones"], axis=1)
-    i_est_arranque = np.linalg.norm(resultado_arranque["corrientes"][:, :2], axis=1)
-    v_est_parada = np.linalg.norm(resultado_parada["tensiones"], axis=1)
-    i_est_parada = np.linalg.norm(resultado_parada["corrientes"][:, :2], axis=1)
+    v_arranque = np.sqrt(
+        resultado_arranque["tensiones"][:, 0] ** 2 + resultado_arranque["tensiones"][:, 1] ** 2
+    )
+    i_arranque = np.sqrt(
+        resultado_arranque["corrientes"][:, 0] ** 2 + resultado_arranque["corrientes"][:, 1] ** 2
+    )
 
-    # Magnitudes de tensión inducida y corriente del rotor (referidas al estator).
-    v_rot_arranque = np.linalg.norm(resultado_arranque["tensiones_rotor"], axis=1)
-    i_rot_arranque = np.linalg.norm(resultado_arranque["corrientes"][:, 2:], axis=1)
-    v_rot_parada = np.linalg.norm(resultado_parada["tensiones_rotor"], axis=1)
-    i_rot_parada = np.linalg.norm(resultado_parada["corrientes"][:, 2:], axis=1)
+    # Para la parada hago lo mismo (aunque la tensión debería quedar en cero).
+    v_parada = np.sqrt(
+        resultado_parada["tensiones"][:, 0] ** 2 + resultado_parada["tensiones"][:, 1] ** 2
+    )
+    i_parada = np.sqrt(
+        resultado_parada["corrientes"][:, 0] ** 2 + resultado_parada["corrientes"][:, 1] ** 2
+    )
 
-    # Figura para el arranque (estator y rotor por separado).
-    fig_arranque, (ax_est_arr, ax_rot_arr) = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
-    ax_est_arr.plot(resultado_arranque["tiempos"], v_est_arranque, label="|v estator|")
-    ax_est_arr.plot(resultado_arranque["tiempos"], i_est_arranque, label="|i estator|")
-    ax_est_arr.set_title("Arranque - Estator: tensión y corriente")
-    ax_est_arr.set_ylabel("Magnitud")
-    ax_est_arr.grid(True)
-    ax_est_arr.legend()
+    # Creo la figura con dos subgráficos, uno para arranque y otro para parada.
+    plt.figure(figsize=(10, 6))
 
-    ax_rot_arr.plot(resultado_arranque["tiempos"], v_rot_arranque, label="|v rotor eq|")
-    ax_rot_arr.plot(resultado_arranque["tiempos"], i_rot_arranque, label="|i rotor|")
-    ax_rot_arr.set_title("Arranque - Rotor: tensión inducida y corriente")
-    ax_rot_arr.set_xlabel("Tiempo [s]")
-    ax_rot_arr.set_ylabel("Magnitud")
-    ax_rot_arr.grid(True)
-    ax_rot_arr.legend()
+    # Primer subplot: arranque.
+    plt.subplot(2, 1, 1)
+    plt.plot(resultado_arranque["tiempos"], v_arranque, label="|v_estator|")
+    plt.plot(resultado_arranque["tiempos"], i_arranque, label="|i_estator|")
+    plt.title("Arranque: tensión y corriente vs tiempo (magnitud)")
+    plt.xlabel("Tiempo [s]")
+    plt.ylabel("Magnitud")
+    plt.grid(True)
+    plt.legend()
 
-    fig_arranque.tight_layout()
+    # Segundo subplot: parada.
+    plt.subplot(2, 1, 2)
+    plt.plot(resultado_parada["tiempos"], v_parada, label="|v_estator|", color="tab:orange")
+    plt.plot(resultado_parada["tiempos"], i_parada, label="|i_estator|", color="tab:green")
+    plt.title("Parada: tensión y corriente vs tiempo (magnitud)")
+    plt.xlabel("Tiempo [s]")
+    plt.ylabel("Magnitud")
+    plt.grid(True)
+    plt.legend()
 
-    # Figura para la parada (también separada en estator y rotor).
-    fig_parada, (ax_est_par, ax_rot_par) = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
-    ax_est_par.plot(resultado_parada["tiempos"], v_est_parada, label="|v estator|")
-    ax_est_par.plot(resultado_parada["tiempos"], i_est_parada, label="|i estator|")
-    ax_est_par.set_title("Parada - Estator: tensión y corriente")
-    ax_est_par.set_ylabel("Magnitud")
-    ax_est_par.grid(True)
-    ax_est_par.legend()
-
-    ax_rot_par.plot(resultado_parada["tiempos"], v_rot_parada, label="|v rotor eq|")
-    ax_rot_par.plot(resultado_parada["tiempos"], i_rot_parada, label="|i rotor|")
-    ax_rot_par.set_title("Parada - Rotor: tensión inducida y corriente")
-    ax_rot_par.set_xlabel("Tiempo [s]")
-    ax_rot_par.set_ylabel("Magnitud")
-    ax_rot_par.grid(True)
-    ax_rot_par.legend()
-
-    fig_parada.tight_layout()
-
-    # Figura combinada con los cuatro gráficos para tener todo en una sola ventana.
-    fig_todo, ejes = plt.subplots(2, 2, figsize=(12, 8), sharex="col")
-    (ax_est_arr2, ax_rot_arr2), (ax_est_par2, ax_rot_par2) = ejes
-
-    # Arranque - estator en la esquina superior izquierda.
-    ax_est_arr2.plot(resultado_arranque["tiempos"], v_est_arranque, label="|v estator|")
-    ax_est_arr2.plot(resultado_arranque["tiempos"], i_est_arranque, label="|i estator|")
-    ax_est_arr2.set_title("Arranque estator")
-    ax_est_arr2.set_ylabel("Magnitud")
-    ax_est_arr2.grid(True)
-    ax_est_arr2.legend()
-
-    # Arranque - rotor en la esquina superior derecha.
-    ax_rot_arr2.plot(resultado_arranque["tiempos"], v_rot_arranque, label="|v rotor eq|")
-    ax_rot_arr2.plot(resultado_arranque["tiempos"], i_rot_arranque, label="|i rotor|")
-    ax_rot_arr2.set_title("Arranque rotor")
-    ax_rot_arr2.grid(True)
-    ax_rot_arr2.legend()
-
-    # Parada - estator en la esquina inferior izquierda.
-    ax_est_par2.plot(resultado_parada["tiempos"], v_est_parada, label="|v estator|")
-    ax_est_par2.plot(resultado_parada["tiempos"], i_est_parada, label="|i estator|")
-    ax_est_par2.set_title("Parada estator")
-    ax_est_par2.set_ylabel("Magnitud")
-    ax_est_par2.set_xlabel("Tiempo [s]")
-    ax_est_par2.grid(True)
-    ax_est_par2.legend()
-
-    # Parada - rotor en la esquina inferior derecha.
-    ax_rot_par2.plot(resultado_parada["tiempos"], v_rot_parada, label="|v rotor eq|")
-    ax_rot_par2.plot(resultado_parada["tiempos"], i_rot_parada, label="|i rotor|")
-    ax_rot_par2.set_title("Parada rotor")
-    ax_rot_par2.set_xlabel("Tiempo [s]")
-    ax_rot_par2.grid(True)
-    ax_rot_par2.legend()
-
-    fig_todo.tight_layout()
-
+    # Ajusto el layout y muestro la figura.
+    plt.tight_layout()
     plt.show()
 
 
